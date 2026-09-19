@@ -1,0 +1,60 @@
+name: Build MYGEE FLOW
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Create Flutter project
+        run: flutter create --org ke.mymusic --project-name musicplayer app
+
+      - name: Copy in the MYGEE FLOW files
+        run: |
+          cp pubspec.yaml app/pubspec.yaml
+          mkdir -p app/lib app/assets
+          cp main.dart app/lib/main.dart
+          cp icon.png app/assets/icon.png
+          cp AndroidManifest.xml app/android/app/src/main/AndroidManifest.xml
+          mkdir -p app/android/app/src/main/kotlin/ke/mymusic/musicplayer
+          cp MainActivity.kt app/android/app/src/main/kotlin/ke/mymusic/musicplayer/MainActivity.kt
+
+      - name: Get packages
+        working-directory: app
+        run: flutter pub get
+
+      - name: Patch old music scanner plugin for new Android tools
+        run: |
+          for f in $(find "$HOME/.pub-cache" -path '*on_audio_query_android*/android/build.gradle'); do
+            sed -i 's/jcenter()/mavenCentral()/g' "$f"
+            if ! grep -q namespace "$f"; then
+              sed -i "0,/android {/s//android {\n    namespace 'com.lucasjosino.on_audio_query'/" "$f"
+            fi
+          done
+
+      - name: Set app icon
+        working-directory: app
+        continue-on-error: true
+        run: dart run flutter_launcher_icons
+
+      - name: Build APK
+        working-directory: app
+        run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MYGEE-FLOW-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
